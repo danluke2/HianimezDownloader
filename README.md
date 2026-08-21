@@ -146,3 +146,10 @@ With this configuration, the tool will:
 - Download subtitles in .vtt format
 
 **Note**: Folder naming automatically adapts to your `default_download_type`. If you set `"dub"` as default, dub folders won't have "(Dub)" appended to their names. Sub folders will still show "(Sub)" to distinguish them.
+
+
+#todo:
+- Sub, HSUB, and DUB options
+- Eventually, allow hsub but that seems like multiple changes needed
+- Only works with "watch" links, not "anime" links
+
