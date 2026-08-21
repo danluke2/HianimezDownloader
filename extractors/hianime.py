@@ -10,6 +10,8 @@ from dataclasses import asdict, dataclass
 from glob import glob
 from typing import Any
 from urllib.parse import urljoin
+from urllib.parse import urlparse
+
 
 import requests
 from bs4 import BeautifulSoup, Tag
@@ -30,7 +32,8 @@ from tools.functions import get_confirmation, get_int_in_range, safe_remove, vtt
 @dataclass
 class Anime:
     name: str
-    url: str
+    url: str                # anime page URL (e.g., /anime/xxx)
+    watch_url: str          # watch episode URL (e.g., /watch/xxx/ep-1)
     sub_episodes: int
     dub_episodes: int
     # download_type can be "sub", "dub"
@@ -64,7 +67,7 @@ class HianimeExtractor:
             "Accept-Language": "en-US,en;q=0.8",
             "Connection": "keep-alive",
         }
-        self.URL: str = "https://hianime.to"
+        self.URL: str = "https://hianimez.org/"
         self.ENCODING = "utf-8"
         self.SUBTITLE_LANG: str = "en"
         self.OTHER_LANGS: list[str] = [
@@ -110,8 +113,8 @@ class HianimeExtractor:
             "slo",
             "ukr",
         ]
-        self.DOWNLOAD_REFRESH: tuple[int, int, int] = (15, 30, 45)
-        self.SERVER_REFRESH: tuple[int, int, int] = (7, 22, 37, 52)
+        self.DOWNLOAD_REFRESH: tuple[int, int, int] = (7, 22, 37)
+        self.SERVER_REFRESH: tuple[int, int, int] = (15, 30, 44, 52)
         self.BAD_TITLE_CHARS: list[str] = [
             "-",
             ".",
@@ -158,6 +161,8 @@ class HianimeExtractor:
             + anime.name
             + Fore.LIGHTGREEN_EX
             + f"\nURL: {Fore.LIGHTBLUE_EX}{anime.url}{Fore.LIGHTGREEN_EX}"
+            + Fore.LIGHTGREEN_EX
+            + f"\nWatch URL: {Fore.LIGHTBLUE_EX}{anime.watch_url}{Fore.LIGHTGREEN_EX}"
             + "\nSub Episodes: "
             + Fore.LIGHTYELLOW_EX
             + str(anime.sub_episodes)
@@ -241,8 +246,12 @@ class HianimeExtractor:
             return
 
         self.configure_driver()
-        self.driver.get(anime.url)
+        self.driver.get(anime.watch_url)
+
         button: WebElement = self.find_server_button(anime)  # type: ignore
+
+        # Toggle the quick-settings before selecting server
+        self.toggle_auto_play()
 
         try:
             button.click()
@@ -464,6 +473,56 @@ class HianimeExtractor:
             f"{Fore.LIGHTRED_EX}Invalid response, please respond with either 'sub' or 'dub'."
         )
         return HianimeExtractor.get_download_type()
+
+    def toggle_auto_play(self) -> None:
+        """Toggle the quick-settings toggle to enable auto_play."""
+        try:
+            # 1. Locate the interactive toggle element based on your HTML structure
+            autoplay_toggle = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "div.toggle-basic[data-name='auto_play']"))
+            )
+
+            # Configuration for the retry loop
+            max_attempts = 5
+            attempt = 0
+            success = False
+
+            # Track the base page window handle
+            main_window = self.driver.current_window_handle
+
+            while attempt < max_attempts and not success:
+                attempt += 1
+                print(f"Attempt {attempt}: Trying to toggle Auto Play...")
+                
+                # 1. Trigger the JavaScript click
+                self.driver.execute_script("arguments[0].click();", autoplay_toggle)
+                time.sleep(0.5)  # Wait for the browser to register the click and potential popup
+        
+                # 2. Immediately hunt and destroy any popups spawned by this click
+                if len(self.driver.window_handles) > 1:
+                    print(f"-> Popup detected on attempt {attempt}. Cleaning up...")
+                    for handle in self.driver.window_handles:
+                        if handle != main_window:
+                            self.driver.switch_to.window(handle)
+                            self.driver.close()
+                    # Refocus back to the main site window
+                    self.driver.switch_to.window(main_window)
+                    time.sleep(0.5)  # Let the DOM settle after switching back
+                    
+                # 3. Check if the element state actually changed to 'on'
+                current_classes = autoplay_toggle.get_attribute("class")
+                if "on" in current_classes.split():
+                    print(f"Success! Auto Play turned ON on attempt {attempt}.")
+                    success = True
+                    time.sleep(2)
+                else:
+                    print(f"-> Attempt {attempt} failed to update state (ad overlay likely swallowed the click).")
+
+            if not success:
+                print("Failed to turn Auto Play on after maximum attempts.")
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
     
     def get_anime_year(self, title: str) -> str | None:
         """Look up the release year of an anime/movie using Jikan (MyAnimeList) API."""
@@ -558,20 +617,24 @@ class HianimeExtractor:
             EC.presence_of_element_located((By.ID, "servers-content"))
         )
 
-        options = [
-            _type.find_element(By.CLASS_NAME, "ps__-list").find_elements(
-                By.TAG_NAME, "a"
-            )
-            for _type in self.driver.find_element(
-                By.ID, "servers-content"
-            ).find_elements(By.XPATH, "./div[contains(@class, 'ps_-block')]")
-        ]
+        servers_container = self.driver.find_element(By.ID, "servers-content")
+    
+        # Find all anchor elements within servers-content
+        all_servers = servers_container.find_elements(By.TAG_NAME, "a")
+        
+        # Filter by data-type attribute
+        if download_type in ["sub", "s"]:
+            servers = [s for s in all_servers if s.get_attribute("data-type") == "sub"]
+        else:
+            servers = [s for s in all_servers if s.get_attribute("data-type") == "dub"]
+        
+        # Debug: print what we found
+        # print(f"Found {len(servers)} servers for {download_type}")
+        # for i, server in enumerate(servers):
+        #     print(f"Server {i}: {server.text} (data-type: {server.get_attribute('data-type')})")
+    
+        return servers
 
-        return (
-            options[0]
-            if len(options) == 1 or (download_type == "sub" or download_type == "s")
-            else options[1]
-        )
 
     def find_server_button(self, anime: Anime) -> WebElement | None:
         options = self.get_server_options(anime.download_type)
@@ -628,7 +691,7 @@ class HianimeExtractor:
         print(f"\n{Fore.LIGHTGREEN_EX}You chose: {Fore.LIGHTCYAN_EX}{selection}")
 
         self.configure_driver()
-        self.driver.get(anime.url)
+        self.driver.get(anime.watch_url)
 
         options = self.get_server_options(anime.download_type)
 
@@ -662,10 +725,10 @@ class HianimeExtractor:
         episodes: list[dict[str, Any]] = []
         soup = BeautifulSoup(page, "html.parser")
 
-        links: list[Tag] = soup.find_all("a", attrs={"data-number": True})  # type: ignore
+        links: list[Tag] = soup.find_all("a", attrs={"data-num": True})  # type: ignore
 
         for link in links:
-            episode_number: int = int(str(link.get("data-number")))
+            episode_number: int = int(str(link.get("data-num")))
             if start_episode <= episode_number <= end_episode:
                 url = urljoin(self.URL, str(link["href"]))
                 episode_title = link.get("title")
@@ -944,10 +1007,38 @@ class HianimeExtractor:
         except AttributeError:
             dub_episodes_available: int = 0
 
-        a_tag: Tag = main_div.find("h2", "film-name").find("a")  # type: ignore
-        return Anime(
-            str(a_tag.text).translate(self.TITLE_TRANS),
-            urljoin(self.URL, "/watch" + str(a_tag["href"])),
-            sub_episodes_available,
-            dub_episodes_available,
-        )
+        try:
+            a_tag: Tag = main_div.find("h2", "film-name").find("a")  # type: ignore
+            anime_href = str(a_tag["href"]).strip()
+            
+            # Handle both absolute URLs and relative paths
+            if anime_href.startswith("http"):
+                # If href is already a full URL, extract the path
+                parsed = urlparse(anime_href)
+                anime_path = parsed.path
+            else:
+                anime_path = anime_href
+
+            # anime_path starts with /watch or /anime, so split and create two paths
+            parts = anime_path.split("/")
+            if len(parts) >= 3:
+                # Extract the anime ID/name from watch path
+                anime_id = parts[2]  # e.g., "the-ramparts-of-ice-dxyxt"
+                anime_path = f"/anime/{anime_id}"
+                watch_path = f"/watch/{anime_id}"
+            
+            anime_url = urljoin(self.URL, anime_path)
+            watch_url = urljoin(self.URL, watch_path)
+
+            return Anime(
+                str(a_tag.text).translate(self.TITLE_TRANS),
+                anime_url,
+                watch_url,
+                sub_episodes_available,
+                dub_episodes_available,
+            )
+        except:
+            print(f"\n\n{Fore.LIGHTRED_EX}URL not valid, provide the 'watch' URL")
+            return
+
+
