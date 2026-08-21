@@ -1,6 +1,6 @@
-# HiAnime Downloader
+# HiAnimez Downloader
 
-A tool forked from https://github.com/gheatherington/HianimeDownloader with HiAnime focused improvements. I did not test this code against other media platforms. Some key additions are as follows:
+A tool forked from https://github.com/gheatherington/HianimeDownloader with HiAnimez focused improvements. I did not test this code against other media platforms. Some key additions are as follows:
 
 - Threading to allow concurrent episode downloads
 - Config file to specify defaults and minimize user input
@@ -56,7 +56,7 @@ blocker working with the chrome session.
 ## Usage
 
 - After running the `main.py` file, enter the name of the anime you would like to search for
-  from [hianime.to](hianime.to) or provide a link to the content you would like to download
+  from [hianimez.org](hianimez.org) or provide a link to the content you would like to download
 
 - If you provided a link you will jump to either the [Downloading from HiAnime](#downloading-from-hianime) 
 
