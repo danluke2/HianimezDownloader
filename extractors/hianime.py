@@ -264,8 +264,6 @@ class HianimeExtractor:
             self.driver.page_source, start_ep, end_ep
         )
 
-        print()
-
         self.captured_video_urls = []
         self.captured_subtitle_urls = []
         threads = []
@@ -284,6 +282,7 @@ class HianimeExtractor:
 
             try:
                 self.driver.requests.clear()
+                del self.driver.requests
                 self.driver.get(url)
                 self.driver.execute_script("window.focus();")
                 media_requests = self.capture_media_requests(anime)
@@ -546,7 +545,7 @@ class HianimeExtractor:
         return None
 
     def configure_driver(self) -> None:
-        mobile_emulation: dict[str, str] = {"deviceName": "iPhone X"}
+        mobile_emulation: dict[str, str] = {"deviceName": "iPhone XR"}
 
         options: webdriver.ChromeOptions = webdriver.ChromeOptions()
 
@@ -673,6 +672,7 @@ class HianimeExtractor:
                 print(f"{Fore.LIGHTRED_EX} {i + 1}: {Fore.LIGHTCYAN_EX}{option.text}")
 
             self.driver.requests.clear()
+            del self.driver.requests
             self.driver.quit()
 
             selection = server_names[
@@ -686,6 +686,7 @@ class HianimeExtractor:
             ]
         else:
             self.driver.requests.clear()
+            del self.driver.requests
             self.driver.quit()
 
         print(f"\n{Fore.LIGHTGREEN_EX}You chose: {Fore.LIGHTCYAN_EX}{selection}")
@@ -756,22 +757,22 @@ class HianimeExtractor:
             )
             sys.stdout.flush()
 
+            m3u8_candidate = None
             for request in self.driver.requests:
                 if not request.response:
                     continue
 
                 uri = request.url.lower()
+                uri_path = urlparse(request.url).path.lower()
                 if uri not in all_urls:
                     all_urls.append(uri)
                 if (
                     not found_m3u8
-                    and uri.endswith(".m3u8")
-                    and "master" in uri
+                    and uri_path.endswith(".m3u8")
                     and uri not in self.captured_video_urls
                 ):
-                    urls["m3u8"] = uri
-                    urls["headers"] = dict(request.headers)
-                    found_m3u8 = True
+                    if m3u8_candidate is None or "master" in uri_path:
+                        m3u8_candidate = request
                     continue
                 if (
                     not found_vtt
@@ -793,6 +794,10 @@ class HianimeExtractor:
                         continue
 
                     urls["all-vtt"].append(uri)
+            if m3u8_candidate is not None:
+                urls["m3u8"] = m3u8_candidate.url
+                urls["headers"] = dict(m3u8_candidate.headers)
+                found_m3u8 = True
             attempt += 1
             if attempt in self.SERVER_REFRESH:
                 self.click_server_button(anime)
@@ -868,7 +873,7 @@ class HianimeExtractor:
             "format": "best",
             "http_headers": headers,
             "logger": SilentLogger(),
-            "fragment_retries": 10,
+            "fragment_retries": 500,
             "retries": 10,
             "socket_timeout": 60,
             "sleep_interval_requests": 1,
