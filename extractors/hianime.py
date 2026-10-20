@@ -1,10 +1,10 @@
-from asyncio import threads
 from datetime import datetime
 import json
 import os
 import sys
 import threading
 import time
+import subprocess
 from argparse import Namespace
 from dataclasses import asdict, dataclass
 from glob import glob
@@ -221,11 +221,12 @@ class HianimeExtractor:
         if self.args.is_movie:
             anime.year = self.get_anime_year(anime.name)
             if not anime.year:
+                current_year = datetime.now().year
                 anime.year = get_int_in_range(
-                    f"{Fore.LIGHTCYAN_EX}Enter the movie release year (e.g., {datetime.datetime.now().year}):{Fore.LIGHTYELLOW_EX} ",
-                    datetime.datetime.now().year - 150,
-                    datetime.datetime.now().year + 1,
-                    datetime.datetime.now().year
+                    f"{Fore.LIGHTCYAN_EX}Enter the movie release year (e.g., {current_year}):{Fore.LIGHTYELLOW_EX} ",
+                    current_year - 150,
+                    current_year + 1,
+                    current_year
                 )
             anime.name += f" ({anime.year})"
 
@@ -418,7 +419,7 @@ class HianimeExtractor:
             name = f"s{anime.season_number:02}e{(episode['number'])+anime.episode_offset:02} - {title} (OVA)"
         else:
             name = f"s{anime.season_number:02}e{episode['number']:02} - {title}"
-        if "m3u8" not in episode.keys() and not episode["m3u8"]:
+        if not episode.get("m3u8"):
             print(f"Skipping {name} (No M3U8 Stream Found)")
             return
 
@@ -523,7 +524,7 @@ class HianimeExtractor:
         except Exception as e:
             print(f"An error occurred: {e}")
     
-    def get_anime_year(self, title: str) -> str | None:
+    def get_anime_year(self, title: str) -> int | None:
         """Look up the release year of an anime/movie using Jikan (MyAnimeList) API."""
         url = f"https://api.jikan.moe/v4/anime"
         params = {"q": title, "limit": 1}
@@ -535,7 +536,8 @@ class HianimeExtractor:
                 aired_from = results[0].get("aired", {}).get("from")
                 if aired_from:
                     year = aired_from[:4]
-                    return year
+                    if year.isdigit():
+                        return int(year)
                 else:
                     print("No air date found for this anime.")
             else:
@@ -830,7 +832,7 @@ class HianimeExtractor:
                 print(f" {i + 1} - {vtt}")
 
             selection = get_int_in_range(
-                "\nSelected Subtitle: ", 1, len(urls["all-vtt"]) + 1
+                "\nSelected Subtitle: ", 1, len(urls["all-vtt"])
             )
             print()
 
@@ -904,7 +906,11 @@ class HianimeExtractor:
         return _return
 
     def get_anime(self, name: str | None = None) -> Anime | None:
-        os.system("cls" if os.name == "nt" else "clear")
+
+        subprocess.run(
+            ["cmd", "/c", "cls"] if os.name == "nt" else ["clear"],
+            check=False,
+        )
         print(Fore.LIGHTGREEN_EX + "\nHiAnime " + Fore.LIGHTWHITE_EX + "GDown\n")
 
         search_name: str = name if name else input("Enter Name of Anime: ")
@@ -928,12 +934,14 @@ class HianimeExtractor:
         # MAKE DICT WITH ANIME TITLES
         anime_list: list[Anime] = []
         for i, element in enumerate(anime_elements, 1):
-            raw_name: str = element.find("h3", class_="film-name").text  # type: ignore
-            name_of_anime: str = raw_name.translate(self.TITLE_TRANS)
+            raw_name: str = element.find("h3", class_="film-name").get_text(strip=True)  # type: ignore
+            name_of_anime: str = raw_name.translate(self.TITLE_TRANS).strip()
             url_of_anime: str = urljoin(
                 self.URL,
                 str(element.find("a", class_="film-poster-ahref item-qtip")["href"]),  # type: ignore
             )
+            anime_id = urlparse(url_of_anime).path.rstrip("/").rsplit("/", 1)[-1]
+            watch_url = urljoin(self.URL, f"/watch/{anime_id}")
 
             try:
                 # Some anime has no subs
@@ -953,6 +961,7 @@ class HianimeExtractor:
                 Anime(
                     name_of_anime,
                     url_of_anime,
+                    watch_url,
                     int(sub_episodes_available),
                     int(dub_episodes_available),
                 )
@@ -987,7 +996,7 @@ class HianimeExtractor:
             get_int_in_range(
                 f"\n{Fore.LIGHTCYAN_EX}Select an anime you want to download:{Fore.LIGHTYELLOW_EX} ",
                 1,
-                len(anime_list) + 1,
+                len(anime_list),
             )
             - 1
         ]
@@ -1036,7 +1045,7 @@ class HianimeExtractor:
             watch_url = urljoin(self.URL, watch_path)
 
             return Anime(
-                str(a_tag.text).translate(self.TITLE_TRANS),
+                a_tag.get_text(strip=True).translate(self.TITLE_TRANS).strip(),
                 anime_url,
                 watch_url,
                 sub_episodes_available,
@@ -1045,5 +1054,3 @@ class HianimeExtractor:
         except:
             print(f"\n\n{Fore.LIGHTRED_EX}URL not valid, provide the 'watch' URL")
             return
-
-

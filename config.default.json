@@ -3,7 +3,6 @@
   "output_dir": "output",
   "movie_output_dir": "movies",
   "ova_output_dir": "OVAs",
-  "aria": false,
   "server": null,
   "default_server": ["HD-1", "HD-2", "HD-3"],
   "default_download_type": null,

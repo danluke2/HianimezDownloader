@@ -1,13 +1,13 @@
 import argparse
 import json
 import os
+import subprocess
 import time
+from urllib.parse import urlparse
 
 from colorama import Fore
 
-from extractors.general import GeneralExtractor
 from extractors.hianime import HianimeExtractor
-from extractors.instagram import InstagramExtractor
 
 
 class Main:
@@ -18,11 +18,15 @@ class Main:
 
     def get_extractor(self):
         if not self.args.link and not self.args.filename:
-            os.system("cls" if os.name == "nt" else "clear")
-            ans = input(
-                f"{Fore.LIGHTGREEN_EX}GDown {Fore.LIGHTCYAN_EX}Downloader\n\nProvide a link or search for an anime:\n{Fore.LIGHTYELLOW_EX}"
+
+            subprocess.run(
+                ["cmd", "/c", "cls"] if os.name == "nt" else ["clear"],
+                check=False,
             )
-            if "http" in ans.lower():
+            ans = input(
+                f"{Fore.LIGHTGREEN_EX}HiAnime {Fore.LIGHTCYAN_EX}Downloader\n\nProvide a HiAnime link or search for an anime:\n{Fore.LIGHTYELLOW_EX}"
+            )
+            if ans.lower().startswith(("http://", "https://")):
                 self.args.link = ans
             else:
                 return HianimeExtractor(args=self.args, name=ans)
@@ -30,11 +34,17 @@ class Main:
         if not self.args.link and self.args.filename:
             return HianimeExtractor(args=self.args, name=self.args.filename)
 
-        if "hianime" in self.args.link:
+        hostname = (urlparse(self.args.link).hostname or "").lower().rstrip(".")
+        hianime_domains = ("hianimez.org",)
+        if any(
+            hostname == domain or hostname.endswith(f".{domain}")
+            for domain in hianime_domains
+        ):
             return HianimeExtractor(args=self.args)
-        if "instagram.com" in self.args.link:
-            return InstagramExtractor(args=self.args)
-        return GeneralExtractor(args=self.args)
+        raise SystemExit(
+            f"Unsupported URL host '{hostname or 'unknown'}'. "
+            "Only HiAnime URLs are supported."
+        )
 
     def load_config(self):
         """Load configuration from config.json file if it exists, otherwise use config.default.json."""
@@ -74,13 +84,13 @@ class Main:
         else:
             output_dir = config.get("output_dir", "output")
         
-        parser = argparse.ArgumentParser(description="Anime downloader options")
+        parser = argparse.ArgumentParser(description="HiAnime downloader options")
 
         parser.add_argument(
             "--subtitles",
-            action="store_true",
+            action=argparse.BooleanOptionalAction,
             default=config.get("subtitles", True),
-            help="Download subtitle files (.vtt or .srt)",
+            help="Download subtitle files (.vtt or .srt) (use --no-subtitles to disable)",
         )
 
         parser.add_argument(
@@ -96,14 +106,7 @@ class Main:
             "--filename",
             type=str,
             default=config.get("filename", ""),
-            help="Used for name of anime, or name of output file when using other extractor",
-        )
-
-        parser.add_argument(
-            "--aria",
-            action="store_true",
-            default=config.get("aria", False),
-            help="Use aria2c as external downloader",
+            help="Anime name to search for",
         )
 
         parser.add_argument(
